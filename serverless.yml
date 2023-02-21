@@ -1,0 +1,66 @@
+service: poc-multi-threads-krhon3
+
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: python3.9
+  stage: ${sls:stage}
+  region: ${env:DEPLOY_REGION}
+  endpointType: REGIONAL
+  apiName: ${self:service}-${self:provider.stage}-${self:custom.stack}-api
+  timeout: 900
+  memorySize: 1024
+  deploymentBucket:
+    name: ${env:S3_DEPLOY_BUCKET}
+  # Since serverless 2.24.0
+  # https://github.com/functionalone/serverless-iam-roles-per-function/blob/master/src/lib/index.ts#L347
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource:
+            - arn:aws:lambda:us-east-1
+
+plugins:
+  - serverless-python-requirements
+  - serverless-s3-remover
+
+custom:
+  stack: backend
+  pythonRequirements:
+    fileName: pip-files/requirements.txt
+    dockerizePip: true
+    dockerImage: public.ecr.aws/sam/build-python3.9:latest
+    layer:
+      name: ${self:service}-${self:provider.stage}-libww
+      description: E2E Backend libraries
+      compatibleRuntimes:
+        - python3.9
+
+package:
+  patterns:
+    # Exclude everything
+    - "!./**"
+    # But include: (update this if more folders become necessary for the api)
+    - "handler.py"
+    # But exclude:
+    - "!**/tests/**"
+    - "!**/tmp/**"
+    - "!**/*.sqlite3"
+
+configValidationMode: error
+
+functions:
+  core:
+    handler: handler.handler
+    name: ${self:service}-${self:provider.stage}-${self:custom.stack}-core
+    environment:
+      # Settings
+      STAGE: ${self:provider.stage}
+      S3_DEPLOY_BUCKET: ${env:S3_DEPLOY_BUCKET}
+
+    layers:
+      - { Ref: PythonRequirementsLambdaLayer }
